@@ -12,9 +12,11 @@ fn main() {
     let res = match args.nth(1) {
         None => Err("No args!".to_string()),
         Some(ref r) if r == "1-1" =>
-            program1::main(&args, false).map(|v| v.to_string()),
+            program1::main(&mut args, false).map(|v| v.to_string()),
         Some(ref r) if r == "1-2" =>
-            program1::main(&args, true).map(|v| v.to_string()),
+            program1::main(&mut args, true).map(|v| v.to_string()),
+        Some(ref r) if r == "2-1" =>
+            program2::main(&mut args).map(|v| v.to_string()),
         Some(other) => Err(format!("Unknown arg: {}", other))
     };
     match res {
@@ -26,7 +28,7 @@ fn main() {
     }
 }
 
-fn open_file_first_arg(mut args: &Args) -> Result<BufReader<File>, String> {
+fn open_file_first_arg(args: &mut Args) -> Result<BufReader<File>, String> {
     let path = args.nth(0).ok_or("No input file!".to_string())?;
     open_file(&path)
 }

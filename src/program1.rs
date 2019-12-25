@@ -2,14 +2,14 @@ use std::env::Args;
 use std::io::{BufRead};
 use crate::open_file_first_arg;
 
-pub fn main(mut args: &Args, recurse_fuel: bool) -> Result<u64, String> {
+pub fn main(args: &mut Args, recurse_fuel: bool) -> Result<u64, String> {
     fn fuel_for(mass: u64, current: u64, recurse: bool) -> u64 {
         let fuel = (mass / 3).checked_sub(2).unwrap_or(0);
         if recurse && fuel != 0 { fuel_for(fuel, current + fuel, recurse) }
         else { current + fuel }
     }
 
-    let reader = open_file_first_arg(&args)?;
+    let reader = open_file_first_arg(args)?;
     let fuel_results  = reader.lines().map(|line_res|
         line_res
             .map_err(|err| format!("Reading line failed: {}", err))
