@@ -6,6 +6,7 @@ use std::env::Args;
 
 mod program1;
 mod program2;
+mod program3;
 
 fn main() {
     let mut args = env::args();
