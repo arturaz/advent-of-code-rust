@@ -16,7 +16,9 @@ fn main() {
         Some(ref r) if r == "1-2" =>
             program1::main(&mut args, true).map(|v| v.to_string()),
         Some(ref r) if r == "2-1" =>
-            program2::main(&mut args).map(|v| v.to_string()),
+            program2::main1(&mut args).map(|v| v.to_string()),
+        Some(ref r) if r == "2-2" =>
+            program2::main2(&mut args).map(|v| v.to_string()),
         Some(other) => Err(format!("Unknown arg: {}", other))
     };
     match res {
