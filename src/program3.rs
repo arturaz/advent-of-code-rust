@@ -9,7 +9,7 @@ use derive_more::{Display};
 use std::fmt::{Display, Formatter, Error};
 use std::convert::TryInto;
 
-pub fn main(args: &mut Args) -> Result<u64, String> {
+pub fn main(args: &mut Args, least_steps: bool) -> Result<u64, String> {
     open_file_first_arg(args).and_then(|reader| {
         fn read_line(
             input: Option<Result<String, io::Error>>, line: CircuitLine
@@ -33,7 +33,10 @@ pub fn main(args: &mut Args) -> Result<u64, String> {
 //        println!("{}", circuit.render());
         let zero = Coord(0, 0);
         crossings.iter()
-            .map(|crossing| crossing.manhattan_distance(&zero))
+            .map(|crossing|
+                if least_steps { crossing.steps() }
+                else { crossing.coord.manhattan_distance(&zero) }
+            )
             .min()
             .ok_or(String::from("No crossings!"))
     })
@@ -82,8 +85,12 @@ struct Bounds { min: Coord, max: Coord }
 #[derive(Display, Eq, PartialEq, Copy, Clone, Debug)]
 enum CircuitLine { _1, _2 }
 
-#[derive(Debug)]
-enum CircuitNode { CentralPort, Line(CircuitLine), Crossing }
+#[derive(Debug, Copy, Clone)]
+enum CircuitNode {
+    CentralPort,
+    Line { line: CircuitLine, steps: u32 },
+    Crossing { steps_l1: u32, steps_l2: u32 }
+}
 
 #[derive(Debug)]
 struct CircuitInstruction(CircuitDirection, u32);
@@ -91,6 +98,11 @@ impl CircuitInstruction {
     fn parse_str(s: &str) -> Result<Vec<CircuitInstruction>, String> {
         s.split(",").map(Circuit::parse_instruction).collect()
     }
+}
+
+struct CircuitCrossingAt { coord: Coord, steps_l1: u32, steps_l2: u32 }
+impl CircuitCrossingAt {
+    fn steps(&self) -> u64 { u64::from(self.steps_l1) + u64::from(self.steps_l2) }
 }
 
 #[derive(Debug)]
@@ -107,22 +119,27 @@ impl Circuit {
     fn update<
         'a,
         I : Iterator<Item = &'a CircuitInstruction>
-    >(&mut self, instructions: I, line: CircuitLine) -> Result<Vec<Coord>, String> {
+    >(&mut self, instructions: I, line: CircuitLine) -> Result<Vec<CircuitCrossingAt>, String> {
         let mut coord = Coord(0, 0);
-        let mut crossings = Vec::<Coord>::new();
+        let mut steps = 0u32;
+        let mut crossings = Vec::<CircuitCrossingAt>::new();
         for instruction in instructions {
 //            println!("start: {:?}, instruction: {:?}", coord, instruction);
             for _ in 1..=instruction.1 {
                 instruction.0.move_mut(&mut coord);
+                steps += 1;
 //                println!("current: {:?}", coord);
-                let node = self.nodes.entry(coord).or_insert(CircuitNode::Line(line));
+                let node = self.nodes.entry(coord).or_insert(CircuitNode::Line { line: line, steps: steps });
                 match *node {
                     CentralPort => return Err(format!("{} crosses central port at {}", line, coord)),
-                    CircuitNode::Crossing => {},
-                    CircuitNode::Line(existing_line) => {
+                    CircuitNode::Crossing { .. } => {},
+                    CircuitNode::Line { line: existing_line, steps: existing_line_steps } => {
                         if line != existing_line {
-                            *node = CircuitNode::Crossing;
-                            crossings.push(coord);
+                            let current_line_1 = line == CircuitLine::_1;
+                            let steps_l1 = if current_line_1 { steps } else { existing_line_steps };
+                            let steps_l2 = if current_line_1 { existing_line_steps } else { steps };
+                            *node = CircuitNode::Crossing { steps_l1, steps_l2 };
+                            crossings.push(CircuitCrossingAt { coord, steps_l1, steps_l2 });
                         }
                     },
                 }
@@ -153,9 +170,9 @@ impl Circuit {
             for x in bounds.min.0..=bounds.max.0 {
                 let character = match self.nodes.get(&Coord(x, y)) {
                     Some(CentralPort) => 'O',
-                    Some(CircuitNode::Line(CircuitLine::_1)) => '1',
-                    Some(CircuitNode::Line(CircuitLine::_2)) => '2',
-                    Some(CircuitNode::Crossing) => 'X',
+                    Some(CircuitNode::Line { line: CircuitLine::_1, .. }) => '1',
+                    Some(CircuitNode::Line { line: CircuitLine::_2, .. }) => '2',
+                    Some(CircuitNode::Crossing { .. }) => 'X',
                     None => '.'
                 };
                 s.push(character);
