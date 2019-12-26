@@ -2,12 +2,15 @@ use std::env::Args;
 use crate::open_file_first_arg;
 use std::io::BufRead;
 use std::num::ParseIntError;
+use std::convert::TryFrom;
 
-pub fn main1(args: &mut Args) -> Result<usize, String> {
+type MemData = i64;
+
+pub fn main1(args: &mut Args) -> Result<MemData, String> {
     computer_from_args(args).and_then(|mut computer| set_and_calc(&mut computer, 12, 2))
 }
 
-pub fn main2(args: &mut Args) -> Result<usize, String> {
+pub fn main2(args: &mut Args) -> Result<MemData, String> {
     computer_from_args(args).and_then(|computer_orig| {
         for noun in 0..99 {
             for verb in 0..99 {
@@ -21,7 +24,7 @@ pub fn main2(args: &mut Args) -> Result<usize, String> {
     })
 }
 
-fn set_and_calc(computer: &mut Computer, noun: usize, verb: usize) -> Result<usize, String> {
+fn set_and_calc(computer: &mut Computer, noun: MemData, verb: MemData) -> Result<MemData, String> {
     *computer.get_mut(1)? = noun;
     *computer.get_mut(2)? = verb;
     // What value is left at position 0 after the program halts?
@@ -41,14 +44,18 @@ fn computer_from_args(args: &mut Args) -> Result<Computer, String> {
         )
 }
 
+//mod computer {
+//    enum ParameterMode { Position, Immediate }
+//}
+
 #[derive(Clone)]
 struct Computer {
-    memory: Vec<usize>
+    memory: Vec<i64>
 }
 impl Computer {
     pub fn from_line(s: &str) -> Result<Computer, ParseIntError> {
-        let mem_res: Result<Vec<usize>, ParseIntError> =
-            s.split(",").map(|s| s.parse::<usize>()).collect();
+        let mem_res: Result<Vec<_>, ParseIntError> =
+            s.split(",").map(|s| s.parse::<MemData>()).collect();
         mem_res.map(|mem| Computer { memory: mem } )
     }
 
@@ -56,19 +63,20 @@ impl Computer {
         format!("Out of bounds index {} (max: {})", idx, self.memory.len() - 1)
     }
 
-    pub fn get(&self, idx: usize) -> Result<&usize, String> {
+    pub fn get(&self, idx: usize) -> Result<&MemData, String> {
         self.memory.get(idx).ok_or_else(|| self.oob_err(idx))
     }
 
-    pub fn get_mut(&mut self, idx: usize) -> Result<&mut usize, String> {
-        let err = self.oob_err(idx);
-        if let Some(reference) = self.memory.get_mut(idx) { Ok(reference) }
-        else { Err(
-            err /* If I move computation of err here, compiler complains of borrowing self mutably
-            and immutably at the same time. I think I am not. Why? Is this related to Polonius?
-            http://smallcultfollowing.com/babysteps/blog/2018/06/15/mir-based-borrow-check-nll-status-update/
-            */
-        ) }
+    pub fn get_idx(&self, idx: usize) -> Result<usize, String> {
+        self.get(idx).and_then(|v|
+            usize::try_from(*v)
+                .map_err(|err| format!("Value {} at index {} is not usize: {}!", v, idx, err))
+        )
+    }
+
+    pub fn get_mut(&mut self, idx: usize) -> Result<&mut MemData, String> {
+        if idx <= self.memory.len() - 1 { Ok(unsafe { self.memory.get_unchecked_mut(idx) }) }
+        else { Err(self.oob_err(idx)) }
     }
 
     pub fn run(&mut self) -> Result<(), String> {
@@ -78,14 +86,20 @@ impl Computer {
             match op_code {
                 99 => return Ok(()),
                 1 | 2 => {
-                    let a_idx = self.get(index + 1)?;
-                    let b_idx = self.get(index + 2)?;
-                    let result_idx = *self.get(index + 3)?;
-                    let a = *self.get(*a_idx)?;
-                    let b = *self.get(*b_idx)?;
+                    let a_idx = self.get_idx(index + 1)?;
+                    let b_idx = self.get_idx(index + 2)?;
+                    let result_idx = self.get_idx(index + 3)?;
+                    let a = *self.get(a_idx)?;
+                    let b = *self.get(b_idx)?;
                     let result = self.get_mut(result_idx)?;
                     *result = if op_code == 1 { a + b } else { a * b };
                     index += 4;
+                },
+                3 => {
+                    unimplemented!()
+                },
+                4 => {
+                    unimplemented!()
                 },
                 other => return Err(format!("Unknown op code: {}", other))
             }
