@@ -7,6 +7,7 @@ use std::env::Args;
 mod program1;
 mod program2;
 mod program3;
+mod program4;
 
 fn main() {
     let mut args = env::args();
@@ -24,6 +25,8 @@ fn main() {
             program3::main(&mut args, false).map(|v| v.to_string()),
         Some(ref r) if r == "3-2" =>
             program3::main(&mut args, true).map(|v| v.to_string()),
+        Some(ref r) if r == "4-1" =>
+            Ok(program4::main(264793..=803935).to_string()),
         Some(other) => Err(format!("Unknown arg: {}", other))
     };
     match res {
