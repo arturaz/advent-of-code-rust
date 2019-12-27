@@ -9,6 +9,7 @@ mod program2;
 mod program3;
 mod program4;
 mod program5;
+mod program6;
 
 fn main() {
     let mut args = env::args();
