@@ -3,18 +3,22 @@ use crate::open_file_first_arg;
 use std::io::BufRead;
 use std::num::ParseIntError;
 use std::convert::TryFrom;
+use std::collections::VecDeque;
+use std::cell::RefCell;
 
-type MemData = i64;
+pub type MemData = i64;
 
 pub fn main1(args: &mut Args) -> Result<MemData, String> {
-    computer_from_args(args).and_then(|mut computer| set_and_calc(&mut computer, 12, 2))
+    computer_from_args(args, ComputerIO::empty())
+        .and_then(|mut computer| set_and_calc(&mut computer, 12, 2))
 }
 
 pub fn main2(args: &mut Args) -> Result<MemData, String> {
-    computer_from_args(args).and_then(|computer_orig| {
+    computer_from_args(args, ComputerIO::empty()).and_then(|mut computer| {
+        let orig_mem = computer.memory.clone();
         for noun in 0..99 {
             for verb in 0..99 {
-                let mut computer = computer_orig.clone();
+                computer.memory = orig_mem.clone();
                 if let Ok(19690720) = set_and_calc(&mut computer, noun, verb) {
                     return Ok(100 * noun + verb);
                 }
@@ -32,14 +36,14 @@ fn set_and_calc(computer: &mut Computer, noun: MemData, verb: MemData) -> Result
     Ok(*computer.get(0)?)
 }
 
-fn computer_from_args(args: &mut Args) -> Result<Computer, String> {
+pub fn computer_from_args(args: &mut Args, io: ComputerIO) -> Result<Computer, String> {
     let reader = open_file_first_arg(args)?;
     reader.lines().nth(0).ok_or("No lines in file!".to_string())
         .and_then(|line_res|
             line_res
                 .map_err(|err| err.to_string())
                 .and_then(|line|
-                    Computer::from_line(&line).map_err(|err| err.to_string() )
+                    Computer::from_line(&line, io).map_err(|err| err.to_string() )
                 )
         )
 }
@@ -60,7 +64,7 @@ impl OpCode {
 }
 
 #[derive(Copy, Clone)]
-enum ParameterMode { Position, Immediate }
+pub enum ParameterMode { Position, Immediate }
 
 struct Instruction {
     op_code: OpCode,
@@ -88,15 +92,48 @@ impl Instruction {
     }
 }
 
-#[derive(Clone)]
-struct Computer {
-    memory: Vec<i64>
+pub struct ComputerInput(Box<dyn Fn() -> Result<MemData, String>>);
+impl ComputerInput {
+    pub fn empty() -> ComputerInput {
+        ComputerInput(Box::new(|| Err(String::from("no input!"))))
+    }
+
+    pub fn from_vec(vec: Vec<MemData>) -> ComputerInput {
+        let vec_cell = RefCell::new(VecDeque::from(vec));
+        ComputerInput(Box::new(move || {
+            vec_cell.try_borrow_mut()
+                .map_err(|err| format!("Failed to borrow vec: {}", err))
+                .and_then(|mut vec| vec.pop_front().ok_or_else(|| String::from("no more input!")))
+        }))
+    }
+}
+
+pub struct ComputerOutput(pub Box<dyn Fn(MemData)>);
+impl ComputerOutput {
+    pub fn discard() -> ComputerOutput {
+        ComputerOutput(Box::new(|_data| {}))
+    }
+}
+
+pub struct ComputerIO {
+    pub input: ComputerInput,
+    pub output: ComputerOutput
+}
+impl ComputerIO {
+    pub fn empty() -> ComputerIO {
+        ComputerIO { input: ComputerInput::empty(), output: ComputerOutput::discard() }
+    }
+}
+
+pub struct Computer {
+    memory: Vec<i64>,
+    io: ComputerIO
 }
 impl Computer {
-    pub fn from_line(s: &str) -> Result<Computer, ParseIntError> {
+    pub fn from_line(s: &str, io: ComputerIO) -> Result<Computer, ParseIntError> {
         let mem_res: Result<Vec<_>, ParseIntError> =
             s.split(",").map(|s| s.parse::<MemData>()).collect();
-        mem_res.map(|mem| Computer { memory: mem } )
+        mem_res.map(|memory| Computer { memory, io } )
     }
 
     fn oob_err(&self, idx: usize) -> String {
@@ -128,6 +165,11 @@ impl Computer {
         else { Err(self.oob_err(idx)) }
     }
 
+    pub fn get_output_cell(&mut self, idx: usize) -> Result<&mut MemData, String> {
+        let cell_idx = self.get_idx(idx)?;
+        self.get_mut(cell_idx)
+    }
+
     pub fn run(&mut self) -> Result<(), String> {
         let mut index = 0usize;
         loop {
@@ -141,15 +183,19 @@ impl Computer {
                 OpCode::Add | OpCode::Multiply => {
                     let a = *get_param(0)?;
                     let b = *get_param(1)?;
-                    let result_idx = self.get_idx(index + 3)?;
-                    let result = self.get_mut(result_idx)?;
+                    let result = self.get_output_cell(index + 3)?;
                     *result = if instruction.op_code == OpCode::Add { a + b } else { a * b };
                     index += 4;
                 },
                 OpCode::TakeInput => {
+                    let input = (self.io.input.0)()?;
+                    let result = self.get_output_cell(index + 1)?;
+                    *result = input;
                     index += 2;
                 },
                 OpCode::Output => {
+                    let value = *get_param(0)?;
+                    (self.io.output.0)(value);
                     index += 2;
                 }
             }

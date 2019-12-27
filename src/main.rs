@@ -8,6 +8,7 @@ mod program1;
 mod program2;
 mod program3;
 mod program4;
+mod program5;
 
 fn main() {
     let mut args = env::args();
@@ -29,6 +30,10 @@ fn main() {
             Ok(program4::main(264793..=803935, true).to_string()),
         Some(ref r) if r == "4-2" =>
             Ok(program4::main(264793..=803935, false).to_string()),
+        Some(ref r) if r == "5-1" =>
+            program5::main1(&mut args).map(|v|
+                v.iter().map(|a| format!("{}", a)).collect::<Vec<_>>().join("\n")
+            ),
         Some(other) => Err(format!("Unknown arg: {}", other))
     };
     match res {
