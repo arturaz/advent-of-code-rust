@@ -34,6 +34,10 @@ fn main() {
             program5::main1(&mut args).map(|v|
                 v.iter().map(|a| format!("{}", a)).collect::<Vec<_>>().join("\n")
             ),
+        Some(ref r) if r == "5-2" =>
+            program5::main2(&mut args).map(|v|
+                v.iter().map(|a| format!("{}", a)).collect::<Vec<_>>().join("\n")
+            ),
         Some(other) => Err(format!("Unknown arg: {}", other))
     };
     match res {

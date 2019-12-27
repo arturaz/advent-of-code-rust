@@ -49,7 +49,9 @@ pub fn computer_from_args(args: &mut Args, io: ComputerIO) -> Result<Computer, S
 }
 
 #[derive(Eq, PartialEq)]
-enum OpCode { Add, Multiply, Halt, TakeInput, Output }
+enum OpCode {
+    Add, Multiply, Halt, TakeInput, Output, JumpIfTrue, JumpIfFalse, LessThan, Equals
+}
 impl OpCode {
     fn parse(data: MemData) -> Result<OpCode, String> {
         match data {
@@ -58,6 +60,10 @@ impl OpCode {
             2 => Ok(OpCode::Multiply),
             3 => Ok(OpCode::TakeInput),
             4 => Ok(OpCode::Output),
+            5 => Ok(OpCode::JumpIfTrue),
+            6 => Ok(OpCode::JumpIfFalse),
+            7 => Ok(OpCode::LessThan),
+            8 => Ok(OpCode::Equals),
             _ => Err(format!("Unknown op code {}", data))
         }
     }
@@ -177,6 +183,17 @@ impl Computer {
             let get_param = |idx: u8| {
                 self.get_param(index + idx as usize + 1, instruction.parameter_mode(idx.into()))
             };
+            let jump_if = |jump_if_true: bool| {
+                let is_true = *get_param(0)? != 0;
+                if is_true == jump_if_true {
+                    let p2 = *get_param(1)?;
+                    usize::try_from(p2).map_err(|err|
+                        format!("Value {} at for jump if {} is not usize: {}!", p2, jump_if_true, err)
+                    )
+                } else {
+                    Ok(index + 3)
+                }
+            };
 
             match instruction.op_code {
                 OpCode::Halt => return Ok(()),
@@ -197,6 +214,26 @@ impl Computer {
                     let value = *get_param(0)?;
                     (self.io.output.0)(value);
                     index += 2;
+                },
+                OpCode::JumpIfTrue => {
+                    index = jump_if(true)?;
+                },
+                OpCode::JumpIfFalse => {
+                    index = jump_if(false)?;
+                },
+                OpCode::LessThan => {
+                    let p0 = *get_param(0)?;
+                    let p1 = *get_param(1)?;
+                    let result = self.get_output_cell(index + 3)?;
+                    *result = if p0 < p1 { 1 } else { 0 };
+                    index += 4;
+                },
+                OpCode::Equals => {
+                    let p0 = *get_param(0)?;
+                    let p1 = *get_param(1)?;
+                    let result = self.get_output_cell(index + 3)?;
+                    *result = if p0 == p1 { 1 } else { 0 };
+                    index += 4;
                 }
             }
         }
