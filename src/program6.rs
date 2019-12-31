@@ -3,7 +3,22 @@ use std::env::Args;
 use std::io::BufRead;
 use std::collections::HashMap;
 
-pub fn main(args: &mut Args) -> Result<u32, String> {
+pub fn main1(args: &mut Args) -> Result<u32, String> {
+    main_orbits(args).map(|o| o.count())
+}
+
+pub fn main2(args: &mut Args) -> Result<u32, String> {
+    let orbits = main_orbits(args)?;
+    let you = OrbitPlanet("YOU".to_owned());
+    let san = OrbitPlanet("SAN".to_owned());
+    let you_orbits = orbits.get(&you)?;
+    let san_orbits = orbits.get(&san)?;
+    let parent = orbits.common_parent(&you, &san)?;
+//    println!("you={:?}\nsan={:?}\nparent={:?}", you_orbits, san_orbits, parent);
+    Ok(you_orbits.distance + san_orbits.distance - 2 - (parent.distance - 1) * 2)
+}
+
+fn main_orbits(args: &mut Args) -> Result<Orbits, String> {
     let reader = open_file_first_arg(args)?;
     let relationships_res: Result<Vec<Relationship>, String> =
         reader.lines().map(|res|
@@ -13,13 +28,13 @@ pub fn main(args: &mut Args) -> Result<u32, String> {
         ).collect();
 
     let orbits = Orbits::new(relationships_res?.into_iter())?;
-    Ok(orbits.count())
+    Ok(orbits)
 }
 
 #[derive(Eq, PartialEq, Hash, Debug, Clone)]
 struct OrbitPlanet(String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum OrbitPoint { CenterOfMass, Planet(OrbitPlanet) }
 
 struct Relationship { parent: OrbitPoint, child: OrbitPlanet }
@@ -38,10 +53,8 @@ impl Relationship {
 #[derive(Debug, Clone)]
 struct MaybeOrbitsAround { orbits: OrbitPoint, distance: Option<u32> }
 
-struct OrbitsAround {
-    #[allow(dead_code)] orbits: OrbitPoint,
-    distance: u32
-}
+#[derive(Debug)]
+struct OrbitsAround { orbits: OrbitPoint, distance: u32 }
 
 struct Orbits {
     map: HashMap<OrbitPlanet, OrbitsAround>
@@ -95,5 +108,35 @@ impl Orbits {
 
     fn count(&self) -> u32 {
         self.map.iter().fold(0u32, |sum, (_, orbits_around)| sum + orbits_around.distance)
+    }
+
+    fn get(&self, key: &OrbitPlanet) -> Result<&OrbitsAround, String> {
+        self.map.get(key).ok_or_else(|| format!("Unknown {:?}", key))
+    }
+
+    fn parent_of<'a>(&self, p: &'a OrbitPoint) -> Result<(&'a OrbitPlanet, &OrbitsAround), String> {
+        match p {
+            OrbitPoint::CenterOfMass =>
+                Err(String::from("Center of mass does not have a parent!")),
+            OrbitPoint::Planet(planet) =>
+                self.get(planet).map(|orbits_around| (planet, orbits_around)),
+        }
+    }
+
+    fn common_parent(&self, key1: &OrbitPlanet, key2: &OrbitPlanet) -> Result<&OrbitsAround, String> {
+        let mut orbits_around1 = self.get(key1)?;
+        let mut orbits_around2 = self.get(key2)?;
+
+        while orbits_around1.orbits != orbits_around2.orbits {
+//            println!("a={:?} b={:?}", orbits_around1, orbits_around2);
+            if orbits_around1.distance > orbits_around2.distance {
+                let (_, b) = self.parent_of(&orbits_around1.orbits)?;
+                orbits_around1 = b;
+            } else {
+                let (_, b) = self.parent_of(&orbits_around2.orbits)?;
+                orbits_around2 = b;
+            }
+        }
+        Ok(orbits_around1)
     }
 }
