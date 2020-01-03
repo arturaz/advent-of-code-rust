@@ -12,6 +12,7 @@ pub fn main2(args: &mut Args) -> Result<Vec<MemData>, String> {
 
 fn main(args: &mut Args, data: Vec<MemData>) -> Result<Vec<MemData>, String> {
     let mut inputs = VecDeque::from(data);
-    computer_from_args(args)
-        .and_then(|mut computer| computer.run_return_outputs(&mut inputs))
+    computer_from_args(args).and_then(|mut computer|
+        computer.run_return_outputs(&mut inputs).map_err(|err| format!("{:?}", err))
+    )
 }

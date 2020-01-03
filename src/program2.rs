@@ -31,7 +31,7 @@ fn set_and_calc(computer: &mut Computer, noun: MemData, verb: MemData) -> Result
     *computer.get_mut(1)? = noun;
     *computer.get_mut(2)? = verb;
     // What value is left at position 0 after the program halts?
-    let _ = computer.run_no_io()?;
+    let _ = computer.run_no_io().map_err(|err| format!("{:?}", err))?;
     Ok(*computer.get(0)?)
 }
 
@@ -48,8 +48,8 @@ pub fn computer_from_args(args: &mut Args) -> Result<Computer, String> {
         )
 }
 
-#[derive(Eq, PartialEq)]
-enum OpCode {
+#[derive(Eq, PartialEq, Debug)]
+pub enum OpCode {
     Add, Multiply, Halt, TakeInput, Output, JumpIfTrue, JumpIfFalse, LessThan, Equals
 }
 impl OpCode {
@@ -108,6 +108,22 @@ impl ComputerMemory {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct ComputerMemoryIndex(usize);
+
+#[derive(Debug)]
+pub enum ComputerError {
+    OutOfInputs(ComputerMemoryIndex),
+    Overflow(MemData, MemData, OpCode),
+    Other(String)
+}
+impl From<String> for ComputerError {
+    fn from(s: String) -> Self { ComputerError::Other(s) }
+}
+impl From<ComputerError> for String {
+    fn from(e: ComputerError) -> Self { format!("{:?}", e) }
+}
+
 pub struct Computer {
     memory: ComputerMemory
 }
@@ -152,11 +168,13 @@ impl Computer {
         self.get_mut(cell_idx)
     }
 
-    pub fn run_no_io(&mut self) -> Result<(), String> {
+    pub fn run_no_io(&mut self) -> Result<(), ComputerError> {
         self.run(&mut VecDeque::new(), &mut Vec::new())
     }
 
-    pub fn run_return_outputs(&mut self, inputs: &mut VecDeque<MemData>) -> Result<Vec<MemData>, String> {
+    pub fn run_return_outputs(
+        &mut self, inputs: &mut VecDeque<MemData>
+    ) -> Result<Vec<MemData>, ComputerError> {
         let mut outputs = Vec::<MemData>::new();
         self.run(inputs, &mut outputs)?;
         Ok(outputs)
@@ -164,8 +182,15 @@ impl Computer {
 
     pub fn run(
         &mut self, inputs: &mut VecDeque<MemData>, outputs: &mut Vec<MemData>
-    ) -> Result<(), String> {
-        let mut index = 0usize;
+    ) -> Result<(), ComputerError> {
+        self.run_from(ComputerMemoryIndex(0), inputs, outputs)
+    }
+
+    pub fn run_from(
+        &mut self, run_from: ComputerMemoryIndex,
+        inputs: &mut VecDeque<MemData>, outputs: &mut Vec<MemData>
+    ) -> Result<(), ComputerError> {
+        let mut index = run_from.0;
         loop {
             let instruction = Instruction::parse(*self.get(index)?)?;
             let get_param = |idx: u8| {
@@ -189,11 +214,15 @@ impl Computer {
                     let a = *get_param(0)?;
                     let b = *get_param(1)?;
                     let result = self.get_output_cell(index + 3)?;
-                    *result = if instruction.op_code == OpCode::Add { a + b } else { a * b };
+                    let maybe_result = (
+                        if instruction.op_code == OpCode::Add { a.checked_add(b) }
+                        else { a.checked_mul(b) }
+                    ).ok_or(ComputerError::Overflow(a, b, instruction.op_code));
+                    *result = maybe_result?;
                     index += 4;
                 },
                 OpCode::TakeInput => {
-                    let input = inputs.pop_front().ok_or_else(|| String::from("Out of inputs!"))?;
+                    let input = inputs.pop_front().ok_or(ComputerError::OutOfInputs(ComputerMemoryIndex(index)))?;
                     let result = self.get_output_cell(index + 1)?;
                     *result = input;
                     index += 2;
