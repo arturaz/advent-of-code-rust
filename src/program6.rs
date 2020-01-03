@@ -2,6 +2,7 @@ use crate::open_file_first_arg;
 use std::env::Args;
 use std::io::BufRead;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub fn main1(args: &mut Args) -> Result<u32, String> {
     main_orbits(args).map(|o| o.count())
@@ -9,8 +10,8 @@ pub fn main1(args: &mut Args) -> Result<u32, String> {
 
 pub fn main2(args: &mut Args) -> Result<u32, String> {
     let orbits = main_orbits(args)?;
-    let you = OrbitPlanet("YOU".to_owned());
-    let san = OrbitPlanet("SAN".to_owned());
+    let you = OrbitPlanet(Rc::from("YOU"));
+    let san = OrbitPlanet(Rc::from("SAN"));
     let you_orbits = orbits.get(&you)?;
     let san_orbits = orbits.get(&san)?;
     let parent = orbits.common_parent(&you, &san)?;
@@ -32,7 +33,7 @@ fn main_orbits(args: &mut Args) -> Result<Orbits, String> {
 }
 
 #[derive(Eq, PartialEq, Hash, Debug, Clone)]
-struct OrbitPlanet(String);
+struct OrbitPlanet(Rc<str>);
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum OrbitPoint { CenterOfMass, Planet(OrbitPlanet) }
@@ -44,9 +45,9 @@ impl Relationship {
         let parent_str = split.nth(0).ok_or(format!("Can't find part 0 in '{}'", s))?;
         let parent =
             if parent_str == "COM" { OrbitPoint::CenterOfMass }
-            else { OrbitPoint::Planet(OrbitPlanet(String::from(parent_str))) };
+            else { OrbitPoint::Planet(OrbitPlanet(Rc::from(parent_str))) };
         let child = split.nth(0).ok_or(format!("Can't find part 1 in '{}'", s))?;
-        Ok(Relationship { parent, child: OrbitPlanet(String::from(child)) })
+        Ok(Relationship { parent, child: OrbitPlanet(Rc::from(child)) })
     }
 }
 
