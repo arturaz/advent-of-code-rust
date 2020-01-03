@@ -43,6 +43,7 @@ fn main() {
         Some(ref r) if r == "6-1" => program6::main1(&mut args).map(|v| v.to_string()),
         Some(ref r) if r == "6-2" => program6::main2(&mut args).map(|v| v.to_string()),
         Some(ref r) if r == "7-1" => program7::main1(&mut args).map(|v| v.to_string()),
+        Some(ref r) if r == "7-2" => program7::main2(&mut args).map(|v| v.to_string()),
         Some(other) => Err(format!("Unknown arg: {}", other))
     };
     match res {

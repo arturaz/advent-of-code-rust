@@ -31,7 +31,7 @@ fn set_and_calc(computer: &mut Computer, noun: MemData, verb: MemData) -> Result
     *computer.get_mut(1)? = noun;
     *computer.get_mut(2)? = verb;
     // What value is left at position 0 after the program halts?
-    let _ = computer.run_no_input()?;
+    let _ = computer.run_no_io()?;
     Ok(*computer.get(0)?)
 }
 
@@ -152,13 +152,20 @@ impl Computer {
         self.get_mut(cell_idx)
     }
 
-    pub fn run_no_input(&mut self) -> Result<Vec<MemData>, String> { self.run(&mut VecDeque::new()) }
+    pub fn run_no_io(&mut self) -> Result<(), String> {
+        self.run(&mut VecDeque::new(), &mut Vec::new())
+    }
+
+    pub fn run_return_outputs(&mut self, inputs: &mut VecDeque<MemData>) -> Result<Vec<MemData>, String> {
+        let mut outputs = Vec::<MemData>::new();
+        self.run(inputs, &mut outputs)?;
+        Ok(outputs)
+    }
 
     pub fn run(
-        &mut self, inputs: &mut VecDeque<MemData>
-    ) -> Result<Vec<MemData>, String> {
+        &mut self, inputs: &mut VecDeque<MemData>, outputs: &mut Vec<MemData>
+    ) -> Result<(), String> {
         let mut index = 0usize;
-        let mut outputs = Vec::<MemData>::new();
         loop {
             let instruction = Instruction::parse(*self.get(index)?)?;
             let get_param = |idx: u8| {
@@ -177,7 +184,7 @@ impl Computer {
             };
 
             match instruction.op_code {
-                OpCode::Halt => return Ok(outputs),
+                OpCode::Halt => return Ok(()),
                 OpCode::Add | OpCode::Multiply => {
                     let a = *get_param(0)?;
                     let b = *get_param(1)?;

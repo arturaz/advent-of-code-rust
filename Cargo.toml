@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 derive_more = "0.99.0"
 permutohedron = "0.2.4"
+arraymap = "0.1.1"

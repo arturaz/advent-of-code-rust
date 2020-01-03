@@ -2,6 +2,7 @@ use std::env::Args;
 use permutohedron::Heap;
 use crate::program2::{computer_from_args, Computer, MemData, ComputerMemory};
 use std::collections::VecDeque;
+use arraymap::ArrayMap;
 
 pub fn main1(args: &mut Args) -> Result<MemData, String> {
     let initial_computer = computer_from_args(args)?;
@@ -10,46 +11,73 @@ pub fn main1(args: &mut Args) -> Result<MemData, String> {
     let heap = Heap::new(&mut data);
     let mut max: Option<MemData> = None;
     for inputs in heap {
-        let a = run_amplifier(initial_computer.memory(), inputs[0], 0)?;
-        let b = run_amplifier(initial_computer.memory(), inputs[1], a)?;
-        let c = run_amplifier(initial_computer.memory(), inputs[2], b)?;
-        let d = run_amplifier(initial_computer.memory(), inputs[3], c)?;
-        let f = run_amplifier(initial_computer.memory(), inputs[4], d)?;
-        max = match max { None => Some(f), Some(v) => Some(v.max(f)) };
+        let result = AmplifierChain::new(initial_computer.memory(), inputs).run(0)?;
+        max = match max { None => Some(result), Some(v) => Some(v.max(result)) };
 //        println!("{:?} = {:?}", inputs, f);
     }
     max.ok_or(String::from("No calculations were performed."))
 }
 
-//struct Amplifier { computer: Computer, input: Option<MemData>, last_output: Option<MemData> }
-//impl Amplifier {
-//    fn new(program: &Computer, phase_setting: u8) -> Amplifier {
-//
-//    }
-//}
-//
-//struct Amplifiers([Amplifier; 5])
-//impl Amplifiers {
-//    fn new(program: &Computer, phase_settings: [u8; 5], input: MemData) -> Amplifiers {
-//        let mut amplifiers = Amplifiers()
-//        for idx in 0..5 {
-//            amplifiers[idx] = Amplifier {
-//                input: if idx == 0 { input } else 0,
-//                computer: Computer::from_cloned_memory(
-//                    &program,
-//                    ComputerIO {
-//                        input: ComputerInput(Box::new(|| {
-//                            Ok(amplifiers.0[idx].input)
-//                        }))
-//                    }
-//                )
-//            }
-//        }
-//    }
-//}
+pub fn main2(args: &mut Args) -> Result<MemData, String> {
+    let initial_computer = computer_from_args(args)?;
 
-fn run_amplifier(initial: &ComputerMemory, phase_setting: u8, input: MemData) -> Result<MemData, String> {
-    let mut amplifier = Computer::new(initial.clone());
-    let outputs = amplifier.run(&mut VecDeque::from(vec![phase_setting as MemData, input]))?;
-    outputs.get(0).map(|v| *v).ok_or(String::from("Computer produced no output!"))
+    let mut data = [5u8, 6, 7, 8, 9];
+    let heap = Heap::new(&mut data);
+    let mut max: Option<MemData> = None;
+    for inputs in heap {
+        let result = AmplifierChain::new(initial_computer.memory(), inputs).run(0)?;
+        max = match max { None => Some(result), Some(v) => Some(v.max(result)) };
+//        println!("{:?} = {:?}", inputs, f);
+    }
+    max.ok_or(String::from("No calculations were performed."))
+}
+
+struct Amplifier { computer: Computer, inputs: VecDeque<MemData>, outputs: Vec<MemData> }
+impl Amplifier {
+    fn new(program: &ComputerMemory, phase_setting: u8) -> Amplifier {
+        let mut inputs = VecDeque::<MemData>::new();
+        inputs.push_front(phase_setting as MemData);
+        Amplifier {
+            computer: Computer::new(program.clone()),
+            inputs,
+            outputs: Vec::new()
+        }
+    }
+
+    fn run(&mut self, input: MemData) -> Result<MemData, String> {
+        self.inputs.push_back(input);
+        self.computer.run(&mut self.inputs, &mut self.outputs)?;
+        self.get_last_output()
+    }
+
+    fn get_last_output(&self) -> Result<MemData, String> {
+        self.outputs.last().map(|v| *v).ok_or_else(|| String::from("No output!"))
+    }
+}
+
+struct AmplifierChain([Amplifier; 5]);
+impl AmplifierChain {
+    fn new(program: &ComputerMemory, phase_settings: [u8; 5]) -> AmplifierChain {
+        let amplifiers = phase_settings.map(|phase_setting| Amplifier::new(program, *phase_setting));
+        AmplifierChain(amplifiers)
+    }
+
+    fn get_last_output(&self, idx: usize) -> Result<MemData, String> {
+        self.0.get(idx)
+            .ok_or_else(|| format!("Wrong index: {}", idx))
+            .and_then(|a| a.get_last_output())
+    }
+
+    fn run(&mut self, input: MemData) -> Result<MemData, String> {
+        let last_idx = self.0.len() - 1;
+        for idx in 0..=last_idx {
+            let amplifier_input = if idx == 0 { input } else { self.get_last_output(idx - 1)? };
+
+            let amplifier = &mut self.0[idx];
+            amplifier.outputs.clear();
+            amplifier.run(amplifier_input)?;
+        }
+
+        self.get_last_output(last_idx)
+    }
 }
