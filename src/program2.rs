@@ -4,18 +4,16 @@ use std::io::BufRead;
 use std::num::ParseIntError;
 use std::convert::TryFrom;
 use std::collections::VecDeque;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 pub type MemData = i64;
 
 pub fn main1(args: &mut Args) -> Result<MemData, String> {
-    computer_from_args(args, ComputerIO::empty())
+    computer_from_args(args)
         .and_then(|mut computer| set_and_calc(&mut computer, 12, 2))
 }
 
 pub fn main2(args: &mut Args) -> Result<MemData, String> {
-    computer_from_args(args, ComputerIO::empty()).and_then(|mut computer| {
+    computer_from_args(args).and_then(|mut computer| {
         let orig_mem = computer.memory.clone();
         for noun in 0..99 {
             for verb in 0..99 {
@@ -33,18 +31,19 @@ fn set_and_calc(computer: &mut Computer, noun: MemData, verb: MemData) -> Result
     *computer.get_mut(1)? = noun;
     *computer.get_mut(2)? = verb;
     // What value is left at position 0 after the program halts?
-    let _ = computer.run()?;
+    let _ = computer.run_no_input()?;
     Ok(*computer.get(0)?)
 }
 
-pub fn computer_from_args(args: &mut Args, io: ComputerIO) -> Result<Computer, String> {
+pub fn computer_from_args(args: &mut Args) -> Result<Computer, String> {
     let reader = open_file_first_arg(args)?;
     reader.lines().nth(0).ok_or("No lines in file!".to_string())
         .and_then(|line_res|
             line_res
                 .map_err(|err| err.to_string())
                 .and_then(|line|
-                    Computer::from_line(&line, io).map_err(|err| err.to_string() )
+                  ComputerMemory::from_line(&line).map_err(|err| err.to_string())
+                      .map(|mem| Computer::new(mem))
                 )
         )
 }
@@ -99,88 +98,32 @@ impl Instruction {
     }
 }
 
-pub struct ComputerInput(Box<dyn Fn() -> Result<MemData, String>>);
-impl ComputerInput {
-    pub fn empty() -> ComputerInput {
-        ComputerInput(Box::new(|| Err(String::from("no input!"))))
-    }
-
-    pub fn from_vec(vec: Vec<MemData>) -> ComputerInput {
-        let vec_cell = RefCell::new(VecDeque::from(vec));
-        ComputerInput(Box::new(move || {
-            vec_cell.try_borrow_mut()
-                .map_err(|err| format!("Failed to borrow vec: {}", err))
-                .and_then(|mut vec| vec.pop_front().ok_or_else(|| String::from("no more input!")))
-        }))
-    }
-}
-
-pub struct ComputerOutput(pub Box<dyn Fn(MemData) -> Option<String>>);
-impl ComputerOutput {
-    pub fn discard() -> ComputerOutput {
-        ComputerOutput(Box::new(|_data| None))
-    }
-
-    pub fn vec() -> (ComputerOutputVec, ComputerOutput) {
-        let outputs = Rc::new(RefCell::new(Vec::<MemData>::new()));
-        let io = {
-            let outputs = Rc::clone(&outputs);
-            ComputerOutput(Box::new(move |data| {
-                match outputs.try_borrow_mut() {
-                    Ok(mut vec) => {
-                        vec.push(data);
-                        None
-                    }
-                    Err(err) => Some(format!("Somebody is using the output vector: {}", err))
-                }
-            }))
-        };
-        (ComputerOutputVec { outputs }, io)
-    }
-}
-
-pub struct ComputerOutputVec {
-    outputs: Rc<RefCell<Vec<MemData>>>
-}
-impl ComputerOutputVec {
-    pub fn try_unwrap_outputs(self) -> Result<Vec<MemData>, String> {
-        Rc::try_unwrap(self.outputs)
-            .map_err(|_| String::from("Can't unwrap!"))
-            .map(|r| r.into_inner())
-    }
-}
-
-pub struct ComputerIO {
-    pub input: ComputerInput,
-    pub output: ComputerOutput
-}
-impl ComputerIO {
-    pub fn empty() -> ComputerIO {
-        ComputerIO { input: ComputerInput::empty(), output: ComputerOutput::discard() }
+#[derive(Clone)]
+pub struct ComputerMemory(Vec<MemData>);
+impl ComputerMemory {
+    pub fn from_line(s: &str) -> Result<ComputerMemory, ParseIntError> {
+        let mem_res: Result<Vec<_>, ParseIntError> =
+            s.split(",").map(|s| s.parse::<MemData>()).collect();
+        mem_res.map(|memory| ComputerMemory(memory))
     }
 }
 
 pub struct Computer {
-    memory: Vec<i64>,
-    io: ComputerIO
+    memory: ComputerMemory
 }
 impl Computer {
-    pub fn from_line(s: &str, io: ComputerIO) -> Result<Computer, ParseIntError> {
-        let mem_res: Result<Vec<_>, ParseIntError> =
-            s.split(",").map(|s| s.parse::<MemData>()).collect();
-        mem_res.map(|memory| Computer { memory, io } )
-    }
-
-    pub fn from_cloned_memory(other: &Computer, io: ComputerIO) -> Computer {
-        Computer { memory: other.memory.clone(), io }
+    pub fn new(memory: ComputerMemory) -> Computer {
+        Computer { memory }
     }
 
     fn oob_err(&self, idx: usize) -> String {
-        format!("Out of bounds index {} (max: {})", idx, self.memory.len() - 1)
+        format!("Out of bounds index {} (max: {})", idx, self.memory.0.len() - 1)
     }
 
+    pub fn memory(&self) -> &ComputerMemory { &self.memory }
+
     pub fn get(&self, idx: usize) -> Result<&MemData, String> {
-        self.memory.get(idx).ok_or_else(|| self.oob_err(idx))
+        self.memory.0.get(idx).ok_or_else(|| self.oob_err(idx))
     }
 
     pub fn get_idx(&self, idx: usize) -> Result<usize, String> {
@@ -200,7 +143,7 @@ impl Computer {
     }
 
     pub fn get_mut(&mut self, idx: usize) -> Result<&mut MemData, String> {
-        if idx <= self.memory.len() - 1 { Ok(unsafe { self.memory.get_unchecked_mut(idx) }) }
+        if idx <= self.memory.0.len() - 1 { Ok(unsafe { self.memory.0.get_unchecked_mut(idx) }) }
         else { Err(self.oob_err(idx)) }
     }
 
@@ -209,8 +152,13 @@ impl Computer {
         self.get_mut(cell_idx)
     }
 
-    pub fn run(&mut self) -> Result<(), String> {
+    pub fn run_no_input(&mut self) -> Result<Vec<MemData>, String> { self.run(&mut VecDeque::new()) }
+
+    pub fn run(
+        &mut self, inputs: &mut VecDeque<MemData>
+    ) -> Result<Vec<MemData>, String> {
         let mut index = 0usize;
+        let mut outputs = Vec::<MemData>::new();
         loop {
             let instruction = Instruction::parse(*self.get(index)?)?;
             let get_param = |idx: u8| {
@@ -229,7 +177,7 @@ impl Computer {
             };
 
             match instruction.op_code {
-                OpCode::Halt => return Ok(()),
+                OpCode::Halt => return Ok(outputs),
                 OpCode::Add | OpCode::Multiply => {
                     let a = *get_param(0)?;
                     let b = *get_param(1)?;
@@ -238,14 +186,14 @@ impl Computer {
                     index += 4;
                 },
                 OpCode::TakeInput => {
-                    let input = (self.io.input.0)()?;
+                    let input = inputs.pop_front().ok_or_else(|| String::from("Out of inputs!"))?;
                     let result = self.get_output_cell(index + 1)?;
                     *result = input;
                     index += 2;
                 },
                 OpCode::Output => {
                     let value = *get_param(0)?;
-                    (self.io.output.0)(value);
+                    outputs.push(value);
                     index += 2;
                 },
                 OpCode::JumpIfTrue => {
