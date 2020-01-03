@@ -5,6 +5,7 @@ use std::num::ParseIntError;
 use std::convert::TryFrom;
 use std::collections::VecDeque;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 pub type MemData = i64;
 
@@ -114,10 +115,38 @@ impl ComputerInput {
     }
 }
 
-pub struct ComputerOutput(pub Box<dyn Fn(MemData)>);
+pub struct ComputerOutput(pub Box<dyn Fn(MemData) -> Option<String>>);
 impl ComputerOutput {
     pub fn discard() -> ComputerOutput {
-        ComputerOutput(Box::new(|_data| {}))
+        ComputerOutput(Box::new(|_data| None))
+    }
+
+    pub fn vec() -> (ComputerOutputVec, ComputerOutput) {
+        let outputs = Rc::new(RefCell::new(Vec::<MemData>::new()));
+        let io = {
+            let outputs = Rc::clone(&outputs);
+            ComputerOutput(Box::new(move |data| {
+                match outputs.try_borrow_mut() {
+                    Ok(mut vec) => {
+                        vec.push(data);
+                        None
+                    }
+                    Err(err) => Some(format!("Somebody is using the output vector: {}", err))
+                }
+            }))
+        };
+        (ComputerOutputVec { outputs }, io)
+    }
+}
+
+pub struct ComputerOutputVec {
+    outputs: Rc<RefCell<Vec<MemData>>>
+}
+impl ComputerOutputVec {
+    pub fn try_unwrap_outputs(self) -> Result<Vec<MemData>, String> {
+        Rc::try_unwrap(self.outputs)
+            .map_err(|_| String::from("Can't unwrap!"))
+            .map(|r| r.into_inner())
     }
 }
 
@@ -140,6 +169,10 @@ impl Computer {
         let mem_res: Result<Vec<_>, ParseIntError> =
             s.split(",").map(|s| s.parse::<MemData>()).collect();
         mem_res.map(|memory| Computer { memory, io } )
+    }
+
+    pub fn from_cloned_memory(other: &Computer, io: ComputerIO) -> Computer {
+        Computer { memory: other.memory.clone(), io }
     }
 
     fn oob_err(&self, idx: usize) -> String {

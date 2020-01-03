@@ -10,6 +10,7 @@ mod program3;
 mod program4;
 mod program5;
 mod program6;
+mod program7;
 
 fn main() {
     let mut args = env::args();
@@ -41,6 +42,7 @@ fn main() {
             ),
         Some(ref r) if r == "6-1" => program6::main1(&mut args).map(|v| v.to_string()),
         Some(ref r) if r == "6-2" => program6::main2(&mut args).map(|v| v.to_string()),
+        Some(ref r) if r == "7-1" => program7::main1(&mut args).map(|v| v.to_string()),
         Some(other) => Err(format!("Unknown arg: {}", other))
     };
     match res {
